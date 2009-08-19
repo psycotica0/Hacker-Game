@@ -1,0 +1,213 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Ok, so, last night this popped into my brain.
+Well, this didn't.
+Something did, and through very rapid evolution this resulted.
+
+You can say bad things about it, I won't be upset.
+
+Also, it's doubtful that the evolution is complete, so suggestions and collaboration are still open.
+
+The core of this game is entirely client-server, text-based.
+It is meant to be able to be played entirely using Telnet.
+(For security one could tunnel Telnet over ssh.)
+
+So, in some cases I will be describing the game, and it might seem like I'm discussing something visual.
+Keep these thoughts in mind, but know that they don't have to be.
+
+The game is played on a grid.
+Size is dependent on the match. Some could be big and have 8 players, others could be relatively small and have 2 players.
+
+Each player / team has some number of Things, or Units. I like to call them Affecters.
+The ultimate goal of the game is to destroy all of the opponent's Affecters.
+
+The Affecters are stuck on the Grid, only moving from one integer position to another.
+One Affecter destroys another by moving onto it.
+
+The gameplay, at it's core, is by typing commands into the terminal.
+I think that the game language would be Lisp-Like.
+Then, each command is assigned a time-cost to complete.
+
+I envision that this time-cost would probably be in Time-Units, then the Time-Unit would map to real-world time depending on a match.
+A fast paced match might have a single time unit be 1 or 2 seconds, whereas a more strategic game would have the time-unit be 5 or 10 seconds.
+
+Technically, one could play a long game where a time-unit would be a day.
+Well, that doesn't really work with the gameplay I'm envisioning ahead.
+Oh well. It's something to think about.
+
+So.
+The core of the game has commands like:
+(move affecter {-1,0,1} {-1,0,1})
+	This would move the given Affecter in the given direction (Only one "step" at a time)
+	This would probably return the Affecter's new position.
+	Also note that this works on Affecters that are not owned by the player.
+(create wall <x-pos> <y-pos>)
+	This would make a wall at the given position.
+	A wall created on an occupied space fails.
+	A wall that is attempted to be moved onto by an Affecter is destroyed, but the affecter doesn't complete the move action.
+	That is, it delays the Affecter for one move.
+(create sensor <x-pos> <y-pos>)
+	This makes a Sensor at a given pos.
+	A Sensor is used to sense things in the immediate vicinity of the sensor.
+	A Sensor that is moved onto by an Affecter is destroyed, but doesn't impede the Affecter.
+(query [object])
+	This tells the position of the named object.
+	All of the create methods would return the name of the object.
+	No object, or '*' for the object, returns data for all objects.
+
+	Returning data for all objects should be designed to take longer than the sum of its parts.
+	It is convenient, but not the fastest way to do things.
+(query <x-pos> <y-pos>)
+	This returns the state of the given grid-square.
+	This is also meant to be faster that querying an object.
+	That is, if you "know" where an object used to be it is faster to query the surrounding area than re-query the object to determine the new position.
+(around <affecter | sensor>)
+	This returns all items within 1 square on either axis to an object.
+	Again, this should be almost instant compared to blind-querying squares and much faster than querying objects.
+
+Some that I'm not sure about:
+(destroy <wall | sensor>)
+	This would be slower than a move.
+	This means that if an Affecter is near, it would be faster to step on it.
+	If, though, you want to sit back and destroy stuff, that could be done.
+
+	I'm not sure about this one because some of the things I'm going to be discussing next.
+	I'm not sure how fair it would be.
+(create affecter <x-pos> <y-pos>)
+	This one would make a new Affecter for the player / team that issued this command.
+	This one would take a relatively long time, so you'd better know what you're doing when you issue it.
+	Also, I'm thinking that perhaps one Affecter can only be spawned in the immediate vicinity of another.
+	I'm not sure.
+
+Also, there would be some Lispy commands.
+There would be loops (In the form of recursion of sorts, this will be discussed later)
+There would be conditions, there would be list commands, etc.
+
+That way you could do things like "(while 1 (move affecter1 -1 0))" that would move affecter1 to the left as fast as possible.
+How this will work will be discussed in a second.
+You could also do "(if (startsWith (head (around affecter1)) affecter) (move affecter1 -1 0))" which set up a crude trap which moves affecter2 to the left when an other affecter gets near it.
+A better trap would use the position to actually find where the thing is and jump on it.
+That, though, would take longer to type, and longer to execute.
+A faster manual typer would be able to get in under and kill that trap before it could complete the move.
+That's the goal, at least.
+
+Also, the hacking up ahead.
+
+So, since commands take some amount of time to execute, they go into a queue.
+(This is the part that would screw up the long-game described above)
+So, as commands are entered they enter the player / team's queue and are executed in that order.
+In an effort to prevent favoritism in the execution engine where it might do something like:
+if (playerHasCommand(1))
+	executePlayerCommand(1)
+if (playerHasCommand(2))
+	executePlayerCommand(2)
+where player1's commands always run before the equivalently timed commands of player2, in the event of two commands showing up at the same time it should be the one that was typed first that runs first.
+
+The looping structures, I see, would execute their contents, then reinsert themselves at the end of the queue.
+In this way they take up time to execute, but mostly only fill up the idle time.
+Background processing, of sorts.
+Also, each command that goes into a queue gets assigned a UID.
+Loops maintain their UID on each run.
+
+So, I also see set of commands that queries the command queues.
+This is when it gets both cut-throat and meta.
+
+So, it'd be something like
+(queue list [player / team])
+	This will return, in a list, the id's and commands in the given player's queue
+	If there is no player, it is assumed to be the player / team that issued the command checking their own queue.
+	
+	This command should be fairly fast for checking one's own queue, and somewhat slow for checking other player's queues.
+(queue remove <id>)
+	This will remove the given item from the queue.
+
+	Again, this will be somewhat fast for the player who owns the item, and somewhat slow for the other players.
+
+This way, if you were to set up that trap loop I mentioned above I could detect that and shut it down.
+If you had some loop where one of your affecters was wandering at random around the map trying to kill things, I could shut that down too.
+Also, since other players can affect my affecters, you could have some loop that is holding my affecter in the bottom right corner so that you can "know" where it is and send one of your affecters to kill it.
+I would also be able to stop that.
+
+I'm thinking, also, that there would be some command to set global registers.
+These would be very fast, and should serve to be like a cache.
+That way I can do things like
+(set Reg1 (query affecter1))
+(if ((equal (head (get  Reg1)) 1) (move affecter1 1 (+ (tail (get Reg1)) 1)))
+Which, I think, would move an affecter down so long as he's in the first column.
+It's mostly useless as a command, but is a place where I want the current position of affecter1 in a couple places.
+So, I can cache it in Reg1 and use it later much faster than querying every time.
+
+This has two disadvantages.
+1) The cache can stale: If through some other means that affecter moves between that place where I query it and the place I use it then that's too bad.
+2) The cache can be poisoned / have collisions: When I said global, I meant global.
+	I could see that you're running that command and purposely put garbage into Reg1 in an attempt to sabotage your command.
+	This would work even better if you were trying to maintain the cache over iterations of a loop without update the cache.
+	Like, if the above example was in a loop, but you only do the (query) once, then update the cache with the new position you think it's at.
+	That would be much faster, but far more dangerous, because I could screw that up much faster than I could remove it from your queue.
+
+
+Now for the craftiest part.
+Since there's already a queue, I see no reason that you can't connect multiple terminals to the server on your behalf and use them all.
+
+At first I was like "This might not stay command-line for long"
+"People would write graphical versions and then it'd mostly be point and click and icons and stuff"
+
+Then I thought, "Let them".
+
+If you can connect multiple terminals to the session, then I could make a small app that is "Radar".
+It would just query every square in turn and output the grid graphically.
+This , though, would be subject to the same rules as if they were being typed.
+Each query would take time and fill my queue.
+If I wanted to run Radar, it would be more convenient, but it would be slower than someone who wasn't.
+Also, since the queries take time, like real radar, each square would be potentially wrong as soon as the query returned.
+The map it would give you would be good for guessing, but is not really accurate.
+
+Another potential app is "Track".
+You would set this one to track an affecter and it would find it it the first time, then it would look around in the immediate area only to try to keep it's eye on it.
+This would be much faster than radar, but still fills the queue with potentially useless commands.
+If that affecter stops moving, you're querying it for nothing.
+
+Another one might be one that shows you the other player's queue in "real-time"
+This one might be useful in that it tells you what the other player is kind of up to, but it fills your queue with a lot of slow commands.
+
+It is my feeling that a really skilled / fast player would be able to beat out most automated tools.
+
+Also, since it's all the same queue, I could poison the app, too.
+I could black out the radar by shutting down the commands that I think are Radar commands.
+The radar app would probably be monitoring it's own queue to try to keep itself alive, but that takes time too.
+
+Moving on:
+
+I've mentioned teams a couple times.
+This is easy.
+Because multiple connections can be made, it is fine if they both happen to be made by different people.
+After that it's up to the team to not step on each other.
+
+
+One command that I'm not sure about would be this one:
+(delay time-units)
+	This one would mostly be for advanced use only.
+	This command just takes up as much time as it's told to.
+	This would be useful for screwing with other people's queues.
+	You could look at the queue and be like "Ok, after 10 units I want to poison that register"
+	So, you'd do:
+	(delay 10)
+	(set Reg1 GARBAGE)
+
+So... that's the idea.
+It ended up much larger in text than in my head.
+It also took much longer to write.
+Like, an hour and a half.
+Wow.
+I've probably missed things.
+
+
+So, Thoughts?
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.8 (Darwin)
+
+iEYEARECAAYFAkp5kE8ACgkQQnvtbacDryJyhACffCRDC3uI71Sb612zYyDB1XXB
+YsUAnRmW+oDwXzvyIQcsKUqTLQWpJmcq
+=2bKL
+-----END PGP SIGNATURE-----
